@@ -24,6 +24,6 @@ def get_db():
     """Gives each API request its own database session, then closes it."""
     db = SessionLocal()
     try:
-        yield db
+        yield db 
     finally:
         db.close()
