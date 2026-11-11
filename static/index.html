@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daily Log</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input, select, button { width: 100%; padding: 12px; font-size: 16px; margin-top: 4px; box-sizing: border-box; }
+    button { background: #2563eb; color: white; border: none; border-radius: 8px; margin-top: 16px; }
+    details { margin-top: 24px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; }
+    summary { cursor: pointer; font-weight: 600; }
+    .message { margin-top: 12px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+    th, td { border-bottom: 1px solid #ddd; padding: 6px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h2>Daily Log</h2>
+  <form id="logForm">
+    <label>Item</label><select id="item"></select>
+    <label>Date</label><input type="date" id="date" required>
+    <label>Made</label><input type="number" id="made" min="0" required>
+    <label>Sold</label><input type="number" id="sold" min="0" required>
+    <label>Wasted</label><input type="number" id="wasted" min="0" required>
+    <button type="submit">Save</button>
+  </form>
+  <div id="message" class="message"></div>
+
+  <details>
+    <summary>Add a new item</summary>
+    <form id="itemForm">
+      <label>Item name</label><input type="text" id="newName" required>
+      <label>Cost to make one (₹)</label><input type="number" id="newCost" min="0" step="0.01" required>
+      <label>Selling price (₹)</label><input type="number" id="newPrice" min="0" step="0.01" required>
+      <button type="submit">Add item</button>
+    </form>
+    <div id="itemMessage" class="message"></div>
+  </details>
+
+  <h2>Report</h2>
+  <table>
+    <thead>
+      <tr><th>Item</th><th>Made</th><th>Sold</th><th>Waste %</th><th>Waste cost</th><th>Profit</th></tr>
+    </thead>
+    <tbody id="report"></tbody>
+  </table>
+
+  <script>
+    const SHOP_ID = 1;
+    const $ = id => document.getElementById(id);
+
+    function setToday() {
+      $("date").value = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
+    }
+
+    // Wasted fills itself in as made minus sold, but the owner can still change it
+    function autoWaste() {
+      const made = parseInt($("made").value);
+      const sold = parseInt($("sold").value);
+      if (!isNaN(made) && !isNaN(sold) && made >= sold) $("wasted").value = made - sold;
+    }
+    $("made").addEventListener("input", autoWaste);
+    $("sold").addEventListener("input", autoWaste);
+
+    async function loadItems() {
+      const res = await fetch(`/items?shop_id=${SHOP_ID}`);
+      const items = await res.json();
+      $("item").innerHTML = "";
+      for (const i of items) {
+        const opt = document.createElement("option");
+        opt.value = i.id;
+        opt.textContent = i.name;
+        $("item").appendChild(opt);
+      }
+    }
+
+    async function loadReport() {
+      const res = await fetch(`/report?shop_id=${SHOP_ID}`);
+      const rows = await res.json();
+      $("report").innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        [r.item, r.made, r.sold, r.waste_percent + "%", "₹" + r.waste_cost, "₹" + r.profit].forEach(v => {
+          const td = document.createElement("td");
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+        $("report").appendChild(tr);
+      }
+    }
+
+    $("logForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const res = await fetch("/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          item_id: parseInt($("item").value),
+          date: $("date").value,
+          quantity_made: parseInt($("made").value),
+          quantity_sold: parseInt($("sold").value),
+          quantity_wasted: parseInt($("wasted").value),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        $("message").textContent = "Saved!";
+        e.target.reset();
+        setToday();
+        loadReport();
+      } else {
+        $("message").textContent = typeof data.detail === "string" ? data.detail : "Please check the numbers";
+      }
+    });
+
+    $("itemForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const res = await fetch("/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shop_id: SHOP_ID,
+          name: $("newName").value.trim(),
+          cost_price: parseFloat($("newCost").value),
+          selling_price: parseFloat($("newPrice").value),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        $("itemMessage").textContent = `Added ${data.name}`;
+        e.target.reset();
+        await loadItems();
+        $("item").value = data.id;   // select the new item in the log form
+        loadReport();
+      } else {
+        $("itemMessage").textContent = typeof data.detail === "string" ? data.detail : "Please check the values";
+      }
+    });
+
+    setToday();
+    loadItems();
+    loadReport();
+  </script>
+</body>
+</html>
